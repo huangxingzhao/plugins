@@ -1,0 +1,164 @@
+package com.company;
+
+import java.io.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class Main {
+
+    public static void main(String[] args) {
+        //TODO 过滤和对讲
+        Map<String, String> prodIdMapedListPrice = getProdMapListPrice();
+        String path = args[0];
+        //格式没过滤
+        if (path == null || "".equals(path)) {
+            return;
+        }
+        File dir = new File(path);
+        List<File> files = ergodic(dir);
+
+        for (File file : files) {
+            try (FileReader fileReader = new FileReader(file);
+                 BufferedReader bufferedReader = new BufferedReader(fileReader);
+                 FileWriter fileWriter = new FileWriter(new File(path + File.separator + "deal_" +file.getName()));
+                 BufferedWriter bufferedWriter = new BufferedWriter(fileWriter)
+            ) {
+                Map<String, String> userParam = readUserParam(bufferedReader,file.length());
+                String str = null;
+                String lastLine = null;
+                String listPrice = null;
+                while ((str = bufferedReader.readLine()) != null) {
+                    if (listPrice != null) {
+                        String oldListPrice = str.substring(str.indexOf("&gt;") + 4,str.indexOf("&lt",str.indexOf("&lt") + 3));
+                        str = str.replace(oldListPrice, listPrice);
+                        listPrice = null;
+                    }
+                    if (lastLine != null && (str.contains("&gt;Discount&lt") || str.contains("&gt;BottomPrice&lt"))) {
+                        String prodIdFake = lastLine.substring(lastLine.indexOf("${") + 2,lastLine.indexOf("}"));
+                        String prodId = userParam.get(prodIdFake);
+                        listPrice = prodIdMapedListPrice.get(prodId);
+                        str = str.replace("Discount", "BottomPrice");
+                    }
+                    bufferedWriter.write(str + "\n");
+                    lastLine = str;
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+
+    }
+
+    private static Map<String, String> getProdMapListPrice() {
+        Map<String, String> prodIdMapedListPrice = new HashMap<>();
+        try (FileReader fileReader = new FileReader(new File("./modification.properties"));
+             BufferedReader bufferedReader = new BufferedReader(fileReader);
+        ) {
+            String str = null;
+            while ((str = bufferedReader.readLine()) != null) {
+                str = str.trim();
+                String[] mapStr = str.split("\\s");
+                if (mapStr.length == 2) {
+                    prodIdMapedListPrice.put(mapStr[0], mapStr[1]);
+                    System.out.println(str);
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return prodIdMapedListPrice;
+    }
+
+
+    private static Map<String, String> readUserParam(BufferedReader bufferedReader,long fileLength) throws IOException {
+        {
+            //BufferedReader是可以按行读取文件
+            String str = null;
+            List<String> keys = new ArrayList<>();
+            List<String> values= new ArrayList<>();
+            boolean keysCollect = false;
+            boolean valuesCollect = false;
+            str = bufferedReader.readLine();
+            bufferedReader.mark((int)fileLength);
+            while((str = bufferedReader.readLine()) != null)
+            {
+                str = getValueBetweenLtAndGt(str);
+                if (str.contains("UserParameters.names")) {
+                    keysCollect = true;
+                    valuesCollect = !keysCollect;
+                } else if (str.contains("UserParameters.thread_values")) {
+                    valuesCollect = true;
+                    keysCollect = !valuesCollect;
+                } else if (str.contains("/collectionProp")) {
+                    valuesCollect = keysCollect = false;
+                }
+
+                if (keysCollect && !str.contains("<")) {
+                    keys.add(str);
+                }
+
+                if (valuesCollect && !str.contains("<")) {
+                    values.add(str);
+                }
+
+                if (str.contains("&lt;InterBOSS&gt")) {
+                    break;
+                }
+            }
+            Map<String, String> userParam = new HashMap<>();
+            if (keys.size() == values.size()) {
+                for (int i = 0; i < values.size(); i++) {
+                    userParam.put(keys.get(i), values.get(i));
+                }
+            }
+            bufferedReader.reset();
+            return userParam;
+        }
+    }
+
+    private static String getValueBetweenLtAndGt(String str) {
+        int ltIndex = str.indexOf("<");
+        int gtIndex = str.indexOf(">");
+        if (ltIndex == -1 || gtIndex == -1) {
+            return str;
+        } else {
+            int ltSecIndex = str.indexOf("<", ltIndex + 1);
+            if (ltSecIndex == -1) {
+                return str;
+            }
+            return str.substring(gtIndex + 1,ltSecIndex);
+        }
+    }
+
+
+    private static List<File> ergodic(File file){
+        File[] files = file.listFiles(new FileFilter(){
+            @Override
+            public boolean accept(File file) {
+                if (file.isDirectory()) {
+                    return true;
+                } else {
+                    String fileName = file.getName();
+                    return fileName.endsWith("jmx") && !fileName.startsWith("deal_");
+                }
+            }
+        });
+        List<File> fileList = new ArrayList<>();
+        if(files==null){
+            return null;
+        }
+        for (File f : files) {
+            if(f.isDirectory()){// 判断是否文件夹
+                fileList.addAll(ergodic(f));// 调用自身,查找子目录
+            }else{
+                fileList.add(f);
+            }
+        }
+        return fileList;
+    }
+}
